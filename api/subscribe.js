@@ -1,5 +1,6 @@
 // File: /api/subscribe.js
-import { Pool } from 'pg';
+import pkg from 'pg';
+const { Pool } = pkg;
 
 // Initialize PostgreSQL connection pool
 const pool = new Pool({
