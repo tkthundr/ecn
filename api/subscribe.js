@@ -1,5 +1,13 @@
 // File: /api/subscribe.js
-import { sql } from '@vercel/postgres';
+import { Pool } from 'pg';
+
+// Initialize PostgreSQL connection pool
+const pool = new Pool({
+  connectionString: process.env.NEON_DATABASE_URL,
+  ssl: {
+    rejectUnauthorized: false // Needed for connecting to Neon
+  }
+});
 
 export default async function handler(req, res) {
   // Only allow POST requests
@@ -28,19 +36,17 @@ export default async function handler(req, res) {
     }
 
     // Check if subscription already exists
-    const existingSubscription = await sql`
-      SELECT * FROM case_subscriptions 
-      WHERE case_id = ${caseId} AND email = ${email}
-    `;
+    const existingSubscriptionResult = await pool.query(
+      'SELECT * FROM case_subscriptions WHERE case_id = $1 AND email = $2',
+      [caseId, email]
+    );
 
-    if (existingSubscription.rowCount > 0) {
+    if (existingSubscriptionResult.rowCount > 0) {
       // Update existing subscription
-      await sql`
-        UPDATE case_subscriptions 
-        SET is_active = ${isActive}, 
-            updated_at = NOW()
-        WHERE case_id = ${caseId} AND email = ${email}
-      `;
+      await pool.query(
+        'UPDATE case_subscriptions SET is_active = $1, updated_at = NOW() WHERE case_id = $2 AND email = $3',
+        [isActive, caseId, email]
+      );
       
       return res.status(200).json({ 
         message: 'Subscription updated successfully',
@@ -49,12 +55,12 @@ export default async function handler(req, res) {
     }
 
     // Check if user has reached free tier limit (1 case per email)
-    const userSubscriptionCount = await sql`
-      SELECT COUNT(*) FROM case_subscriptions 
-      WHERE email = ${email}
-    `;
+    const userSubscriptionCountResult = await pool.query(
+      'SELECT COUNT(*) FROM case_subscriptions WHERE email = $1',
+      [email]
+    );
     
-    const count = parseInt(userSubscriptionCount.rows[0].count);
+    const count = parseInt(userSubscriptionCountResult.rows[0].count);
     if (count >= 1) {
       return res.status(403).json({
         message: 'Free tier limit reached! Please upgrade your plan to monitor additional cases.',
@@ -63,10 +69,10 @@ export default async function handler(req, res) {
     }
 
     // Insert new subscription
-    await sql`
-      INSERT INTO case_subscriptions (case_id, email, subscription_date, is_active, created_at, updated_at)
-      VALUES (${caseId}, ${email}, ${subscriptionDate}, ${isActive}, NOW(), NOW())
-    `;
+    await pool.query(
+      'INSERT INTO case_subscriptions (case_id, email, subscription_date, is_active, created_at, updated_at) VALUES ($1, $2, $3, $4, NOW(), NOW())',
+      [caseId, email, subscriptionDate, isActive]
+    );
 
     return res.status(201).json({ 
       message: 'Subscription created successfully',
